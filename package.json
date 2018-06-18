@@ -1,0 +1,39 @@
+{
+  "name": "snapjunkmail",
+  "version": "1.0.0",
+  "description": "A simple SMTP without any registration",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.16.3",
+    "helmet": "^3.12.1",
+    "ip": "^1.1.5",
+    "mailparse": "^2.2.2",
+    "moment": "^2.22.2",
+    "momentjs": "^2.0.0",
+    "smtp-server": "^3.4.5",
+    "socket.io": "^2.1.1",
+    "underscore": "^1.9.1",
+    "winston": "^3.0.0",
+    "winston-daily-rotate-file": "^3.2.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/normankong/snapjunkmail.git"
+  },
+  "keywords": [
+    "snapmail",
+    "smtp",
+    "mail",
+    "junkmail"
+  ],
+  "author": "Norman Kong",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/normankong/snapjunkmail/issues"
+  },
+  "homepage": "https://github.com/normankong/snapjunkmail#readme"
+}

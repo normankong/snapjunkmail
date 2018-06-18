@@ -1,4 +1,6 @@
 var simpleParser = require('mailparse').simpleParser;
+var helmet = require('helmet');
+var winston = require('winston');
 
 var express = require('express');
 var fs = require('fs');
@@ -10,6 +12,8 @@ var server = require('http').createServer(app);
 var io = require('socket.io').listen(server);
 
 var APP_NAME = "snapjunkmail.com";
+var LOG_LABEL = "Express";
+var LOG_FILE = 'logs/express-%DATE%.log';
 var EXPIRY_TIME_IN_MINUTES = 1;
 var HTTP_PORT = 8080;
 var MAIL_DIR = "mail/";
@@ -20,7 +24,7 @@ var ssSMTP = null;
  *  List all Mail
  */
 app.get('/listall', function (req, res) {
-    console.log("Incoming list all mails request");
+    logger.info("Incoming list all mails request");
     var list = getAllMails(MAIL_DIR);
     initWebResponse(list, res);
     processMailResponse(list, res);
@@ -30,7 +34,7 @@ app.get('/listall', function (req, res) {
  * Get the Last Mail
  */
 app.get('/mail', function (req, res) {
-    console.log("Incoming get mail request");
+    logger.info("Incoming get mail request");
     var list = [];
     var latestEmail = getLatestEmail(MAIL_DIR);
     if (latestEmail != null) list.push(latestEmail);
@@ -48,14 +52,17 @@ app.get('/simEmail', function (req, res) {
 
 app.set('port', HTTP_PORT);
 app.use('/', express.static('web'));
+app.use(helmet());
 
 // Initialize and make sure Port is reachable
 server.listen(app.get('port'), function () {
-    console.log("==========================================================")
-    console.log("[" + APP_NAME + "] Web server is listening on port " + app.get('port'));
-    console.log("Mail Directory : " + MAIL_DIR);
-    console.log("Expiry Time " + EXPIRY_TIME_IN_MINUTES + " minutes");
-    console.log("==========================================================")
+    logger = initializeLogger(LOG_LABEL, LOG_FILE);
+    logger.info("==========================================================")
+    logger.info("[" + APP_NAME + "] Web server is listening on port " + app.get('port'));
+    logger.info("Mail Directory : " + MAIL_DIR);
+    logger.info("Expiry Time    : " + EXPIRY_TIME_IN_MINUTES + " minutes");
+    logger.info("Log Location   : " + LOG_FILE);
+    logger.info("==========================================================")
 });
 
 io.origins('*:*');
@@ -70,7 +77,7 @@ io.sockets.on('connection', function (socket) {
 
     // For SMTP Server Initialize
     socket.on("EVENT_SMTP_SERVER_INITALIZE", function () {
-        console.log("SMTP is connected");
+        logger.info("SMTP is connected");
         ssSMTP = socket;
     });
 
@@ -81,31 +88,31 @@ io.sockets.on('connection', function (socket) {
 });
 
 function connect(socket) {
-    console.log('HTTP Socket Connection Event received');
+    logger.info('HTTP Socket Connection Event received');
     ssList[ssList.length] = socket;
-    console.log("Totally number of connection : " + ssList.length);
+    logger.info("Totally number of connection : " + ssList.length);
 }
 
 function disconnect(socket) {
     if (socket === ssSMTP) {
-        console.log("SMTP Socket was disconnected");
+        logger.info("SMTP Socket was disconnected");
         return;
     }
 
-    console.log('HTTP Socket Disconnected Event received');
+    logger.info('HTTP Socket Disconnected Event received');
     for (var i = 0; i < ssList.length; i++) {
         if (ssList[i] == socket) {
-            console.log("Disonnect " + (i + 1) + "/" + ssList.length);
+            logger.info("Disonnect " + (i + 1) + "/" + ssList.length);
             ssList.splice(i, 1);
         }
     }
-    console.log("Totally number of connection : " + ssList.length);
+    logger.info("Totally number of connection : " + ssList.length);
 }
 
 function broadcastNewMail() {
     var eventType = "EVENT_NEW_MAIL";
     var data = "PLEASE_CHECK_EMAIL";
-    console.log("Send " + eventType + " to " + ssList.length + " connections", data);
+    logger.info("Send " + eventType + " to " + ssList.length + " connections", data);
     for (var i = 0; i < ssList.length; i++) {
         var ss = ssList[i];
         ss.emit(eventType, data);
@@ -127,7 +134,7 @@ function processMailResponse(list, res) {
         return;
     }
 
-    console.log("Reading email : " + MAIL_DIR + item);
+    logger.info("Reading email : " + MAIL_DIR + item);
     var filename = MAIL_DIR + item;
     var source = fs.createReadStream(filename);
     simpleParser(source, (err, mail) => {
@@ -181,4 +188,50 @@ function getAllMails(dir) {
 
     });
     return result;
+}
+
+/**
+ * Initialize Logger
+ */
+function initializeLogger(labelName, logFile) {
+    const {
+        createLogger,
+        format,
+        transports
+    } = require('winston');
+    const {
+        combine,
+        timestamp,
+        label,
+        printf
+    } = format;
+
+    const myFormat = printf(info => {
+        return `${info.timestamp} [${info.label}] ${info.level}: ${info.message}`;
+    });
+
+    require('winston-daily-rotate-file');
+    var transport = new(winston.transports.DailyRotateFile)({
+        filename: logFile,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d'
+    });
+
+    const logger = createLogger({
+        level: 'info',
+        format: combine(
+            label({
+                label: labelName
+            }),
+            timestamp(),
+            myFormat
+        ),
+        transports: [
+            new transports.Console(),
+            transport
+        ]
+    });
+    return logger;
 }

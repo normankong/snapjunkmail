@@ -1,11 +1,15 @@
 var SMTPServer = require('smtp-server').SMTPServer;
+var winston = require('winston');
 var io = require('socket.io-client');
 var fs = require("fs");
 var ip = require("ip");
 var port = 2525;
+
 // The directory where our maildir formatted e-mai lis stored.
 var MAILDIR = "./mail";
 var APP_NAME = "snapjunkmail.com";
+var LOG_LABEL = "SMTP";
+var LOG_FILE = 'logs/smtp-%DATE%.log';
 
 var BROADCAST_ENDPOINT = 'http://localhost:8080';
 var MAX_MAIL_COUNT = 10;
@@ -29,25 +33,26 @@ var serverOptions = {
 var server = new SMTPServer(serverOptions);
 var socket = null;
 server.listen(port, ip.address(), function () {
-    console.log("==========================================================")
-    console.log('[' + APP_NAME + '] SMTP server is listening on port ' + port);
-    console.log("Maximum mail count : " + MAX_MAIL_COUNT);
-    console.log("Express Server : " + BROADCAST_ENDPOINT);
-    console.log("==========================================================")
+    logger = initializeLogger(LOG_LABEL, LOG_FILE);
+    logger.info("==========================================================")
+    logger.info('[' + APP_NAME + '] SMTP server is listening on port ' + port);
+    logger.info("Maximum mail count : " + MAX_MAIL_COUNT);
+    logger.info("Express Server : " + BROADCAST_ENDPOINT);
+    logger.info("==========================================================")
 
     socket = io(BROADCAST_ENDPOINT);
     socket.on('connect', function (data) {
-        console.log('Connect to Express Server');
+        logger.info('Connect to Express Server');
         socket.emit("EVENT_SMTP_SERVER_INITALIZE");
     });
 
     socket.on('disconnect', function () {
-        console.log("Disconnect from Express Server");
+        logger.info("Disconnect from Express Server");
     });
 });
 
 function onConnect(session, callback) {
-    console.log("onConnect : " + session.remoteAddress + "[" + session.clientHostname + "]");
+    logger.info("onConnect : " + session.remoteAddress + "[" + session.clientHostname + "]");
     return callback(); //Accept the connection
 }
 
@@ -64,7 +69,7 @@ function onData(stream, session, callback) {
     //     headerData += "To   : " + toAddress + "\n";
     //     headerData += "Date : " + dateString + "\n";
     //     headerData += "Message Body :\n";
-    // console.log(headerData);
+    // logger.info(headerData);
 
     // Write Body
     var emlfile = MAILDIR + "/" + getUuid();
@@ -73,7 +78,7 @@ function onData(stream, session, callback) {
     });
     stream.pipe(tempWriteStream);
     tempWriteStream.on("finish", function () {
-        console.log("Finish writing file " + emlfile);
+        logger.info("Finish writing file " + emlfile);
 
         // Broad Cast Email
         broadCastEmail();
@@ -81,19 +86,19 @@ function onData(stream, session, callback) {
 
     // Stand IO
     //stream.pipe(process.stdout); // print message to console
-    //console.log('Session \n', session.envelope);
+    //logger.info('Session \n', session.envelope);
     stream.on('end', callback);
 
 
 }
 
 function onMailFrom(address, session, callback) {
-    console.log('From  : ' + address.address);
+    logger.info('From  : ' + address.address);
     return callback();
 }
 
 function onRcptTo(address, session, callback) {
-    console.log('To    : ' + address.address);
+    logger.info('To    : ' + address.address);
     return callback();
 }
 
@@ -104,23 +109,23 @@ function onAuth(auth, session, callback) {
 }
 
 function onClose() {
-    //   console.log("Closing SMTP Connection");
-    console.log("=================================================");
+    //   logger.info("Closing SMTP Connection");
+    logger.info("=================================================");
 }
 
 function broadCastEmail() {
     if (socket != null && socket.connected) {
-        console.log('Broadcast mail');
+        logger.info('Broadcast mail');
         socket.emit("EVENT_BROADCAST_MAIL");
     } else {
-        console.log("Express Server is not available ", socket);
+        logger.info("Express Server is not available ", socket);
     }
 }
 
 function acquireLock() {
     var lockIndex = currentCount++;
     if (currentCount == MAX_MAIL_COUNT) {
-        console.log("Reach maximum mail count " + MAX_MAIL_COUNT);
+        logger.info("Reach maximum mail count " + MAX_MAIL_COUNT);
         currentCount = 0;
     }
     return lockIndex;
@@ -129,4 +134,41 @@ function acquireLock() {
 function getUuid() {
     var curIndex = acquireLock();
     return "mail" + curIndex + ".eml";
+}
+
+
+/**
+ * Initialize Logger
+ */
+function initializeLogger(labelName, logFile)
+{
+    const { createLogger, format, transports } = require('winston');
+    const { combine, timestamp, label, printf } = format;
+
+    const myFormat = printf(info => {
+    return `${info.timestamp} [${info.label}] ${info.level}: ${info.message}`;
+    });
+
+    require('winston-daily-rotate-file');
+    var transport = new (winston.transports.DailyRotateFile)({
+        filename: logFile,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d'
+    });
+
+    const logger = createLogger({
+    level: 'info',
+    format: combine(
+        label({ label: labelName }),
+        timestamp(),
+        myFormat
+    ),
+    transports: [
+        new transports.Console(),
+        transport
+        ]
+    });
+    return logger;
 }
