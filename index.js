@@ -11,7 +11,7 @@ var APP_NAME = "snapjunkmail.com";
 var LOG_LABEL = "SMTP";
 var LOG_FILE = 'logs/smtp-%DATE%.log';
 
-var BROADCAST_ENDPOINT = 'http://localhost:8080';
+var BROADCAST_ENDPOINT = 'http://localhost:8088';
 var MAX_MAIL_COUNT = 10;
 var currentCount = 0;
 

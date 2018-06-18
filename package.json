@@ -9,7 +9,6 @@
     "ip": "^1.1.5",
     "mailparse": "^2.2.2",
     "moment": "^2.22.2",
-    "momentjs": "^2.0.0",
     "smtp-server": "^3.4.5",
     "socket.io": "^2.1.1",
     "underscore": "^1.9.1",
