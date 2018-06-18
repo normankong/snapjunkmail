@@ -1,5 +1,4 @@
 # snapjunkmail
-Snapjunkmail
 
 This application will acts as a
 - SMTP Server
