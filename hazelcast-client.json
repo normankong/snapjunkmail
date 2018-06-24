@@ -1,0 +1,20 @@
+{
+    "properties": {
+        "hazelcast.client.heartbeat.timeout": 10000,
+        "hazelcast.client.invocation.retry.pause.millis": 4000,
+        "hazelcast.client.invocation.timeout.millis": 180000,
+        "hazelcast.invalidation.reconciliation.interval.seconds": 50,
+        "hazelcast.invalidation.max.tolerated.miss.count": 15,
+        "hazelcast.invalidation.min.reconciliation.interval.seconds": 60
+    },
+    "network": {
+        "clusterMembers": [
+            "192.168.86.99:5701",
+            "127.0.0.1:5701"
+        ],
+        "smartRouting": true,
+        "connectionTimeout": 6000,
+        "connectionAttemptPeriod": 4000,
+        "connectionAttemptLimit": 3
+    }
+}

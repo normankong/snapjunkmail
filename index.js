@@ -1,19 +1,22 @@
+var HazelcastClient = require('hazelcast-client').Client;
 var SMTPServer = require('smtp-server').SMTPServer;
+var getRawBody = require('raw-body')
 var winston = require('winston');
-var io = require('socket.io-client');
-var fs = require("fs");
+var moment = require("moment");
+
 var ip = require("ip");
+var IP_ADDRESS = "192.168.86.30"; //ip.address() (Can be replace if you have only 1 IP address);
 var port = 2525;
 
-// The directory where our maildir formatted e-mai lis stored.
-var MAILDIR = "./mail";
+var HAZEL_CAST_MAP = "snapjunkmail_box";
+var HAZEL_CAST_QUEUE = "snapjunkmail_queue";
+
 var APP_NAME = "snapjunkmail.com";
 var LOG_LABEL = "SMTP";
 var LOG_FILE = 'logs/smtp-%DATE%.log';
 
-var BROADCAST_ENDPOINT = 'http://localhost:8088';
 var MAX_MAIL_COUNT = 10;
-var currentCount = 0;
+var EXPIRY_TIME_IN_MINUTES = 10;
 
 var serverOptions = {
     name: APP_NAME,
@@ -31,23 +34,17 @@ var serverOptions = {
 };
 
 var server = new SMTPServer(serverOptions);
-var socket = null;
-server.listen(port, ip.address(), function () {
+server.listen(port, IP_ADDRESS, function () {
     logger = initializeLogger(LOG_LABEL, LOG_FILE);
     logger.info("==========================================================")
     logger.info('[' + APP_NAME + '] SMTP server is listening on port ' + port);
+    logger.info("Listing on : " + IP_ADDRESS);
     logger.info("Maximum mail count : " + MAX_MAIL_COUNT);
-    logger.info("Express Server : " + BROADCAST_ENDPOINT);
     logger.info("==========================================================")
 
-    socket = io(BROADCAST_ENDPOINT);
-    socket.on('connect', function (data) {
-        logger.info('Connect to Express Server');
-        socket.emit("EVENT_SMTP_SERVER_INITALIZE");
-    });
-
-    socket.on('disconnect', function () {
-        logger.info("Disconnect from Express Server");
+    HazelcastClient.newHazelcastClient().then(function (hazelcastClient) {
+        map = hazelcastClient.getMap(HAZEL_CAST_MAP);
+        queue = hazelcastClient.getQueue(HAZEL_CAST_QUEUE);
     });
 });
 
@@ -71,25 +68,35 @@ function onData(stream, session, callback) {
     //     headerData += "Message Body :\n";
     // logger.info(headerData);
 
+    // //Stand IO
+    // stream.pipe(process.stdout); // print message to console
+    // logger.info('Session \n', session.envelope);
+
     // Write Body
-    var emlfile = MAILDIR + "/" + getUuid();
-    var tempWriteStream = fs.createWriteStream(emlfile, {
-        'flags': 'w'
-    });
-    stream.pipe(tempWriteStream);
-    tempWriteStream.on("finish", function () {
-        logger.info("Finish writing file " + emlfile);
+    var emlfile = getUuid();
+    getRawBody(stream, null, function (err, buffer) {
+        var body = buffer.toString();
 
-        // Broad Cast Email
-        broadCastEmail();
+        // Put to the Queue / Map
+        map.put(emlfile, buffer.toString(), EXPIRY_TIME_IN_MINUTES * 60 * 1000);
+        queue.put(emlfile).then(function (val) {
+            // Cleanup obsolete record
+            queue.size().then(function (size) {
+                logger.debug("Mailbox Size : " + size + "/" + MAX_MAIL_COUNT);
+                if (size > MAX_MAIL_COUNT) {
+
+                    return queue.poll().then(function (val) {
+                        logger.info("Clean up overflow mail : " + val)
+                        map.remove(val);
+                    });
+                }
+                logger.info("Writing into hazel cast : " + emlfile);
+
+            });
+        });
     });
 
-    // Stand IO
-    //stream.pipe(process.stdout); // print message to console
-    //logger.info('Session \n', session.envelope);
     stream.on('end', callback);
-
-
 }
 
 function onMailFrom(address, session, callback) {
@@ -109,48 +116,35 @@ function onAuth(auth, session, callback) {
 }
 
 function onClose() {
-    //   logger.info("Closing SMTP Connection");
     logger.info("=================================================");
 }
 
-function broadCastEmail() {
-    if (socket != null && socket.connected) {
-        logger.info('Broadcast mail');
-        socket.emit("EVENT_BROADCAST_MAIL");
-    } else {
-        logger.info("Express Server is not available ", socket);
-    }
-}
-
-function acquireLock() {
-    var lockIndex = currentCount++;
-    if (currentCount == MAX_MAIL_COUNT) {
-        logger.info("Reach maximum mail count " + MAX_MAIL_COUNT);
-        currentCount = 0;
-    }
-    return lockIndex;
-}
-
 function getUuid() {
-    var curIndex = acquireLock();
-    return "mail" + curIndex + ".eml";
+    return moment().format("YYYYMMDD_HHmmss");
 }
-
 
 /**
  * Initialize Logger
  */
-function initializeLogger(labelName, logFile)
-{
-    const { createLogger, format, transports } = require('winston');
-    const { combine, timestamp, label, printf } = format;
+function initializeLogger(labelName, logFile) {
+    const {
+        createLogger,
+        format,
+        transports
+    } = require('winston');
+    const {
+        combine,
+        timestamp,
+        label,
+        printf
+    } = format;
 
     const myFormat = printf(info => {
-    return `${info.timestamp} [${info.label}] ${info.level}: ${info.message}`;
+        return `${info.timestamp} [${info.label}] ${info.level}: ${info.message}`;
     });
 
     require('winston-daily-rotate-file');
-    var transport = new (winston.transports.DailyRotateFile)({
+    var transport = new(winston.transports.DailyRotateFile)({
         filename: logFile,
         datePattern: 'YYYY-MM-DD',
         zippedArchive: true,
@@ -159,16 +153,19 @@ function initializeLogger(labelName, logFile)
     });
 
     const logger = createLogger({
-    level: 'info',
-    format: combine(
-        label({ label: labelName }),
-        timestamp(),
-        myFormat
-    ),
-    transports: [
-        new transports.Console(),
-        transport
+        level: 'info',
+        format: combine(
+            label({
+                label: labelName
+            }),
+            timestamp(),
+            myFormat
+        ),
+        transports: [
+            new transports.Console(),
+            transport
         ]
     });
+
     return logger;
 }
