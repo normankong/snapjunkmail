@@ -11,4 +11,6 @@ Extremely useful if you need to create tons of mail for testing or other purpose
 
 Features
 - By default it will displayed by default, and it only have expiration time in 1 minutes (Configurable)
-- Retrieve the last 5 (Configurable) mail if double click the menu bar.
+- Retrieve the last 10 (Configurable) mail if double click the menu bar.
+- Connect to Hazelcast for in memory DB with clustering support
+
