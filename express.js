@@ -25,7 +25,7 @@ app.get('/listall', function (req, res) {
     logger.info("Incoming list all mails request");
     getAllMails().then(function (list) {
         initWebResponse(res);
-        processMailResponseHazel(list, res);
+        processMailResponseHazel(list, res, false, "raw");
     });
 });
 
@@ -38,11 +38,27 @@ app.get('/mail', function (req, res) {
         var newList = [];
         if (list.length > 1) {
             newList.push(list.pop());
-        } 
+        }
         initWebResponse(res);
-        processMailResponseHazel(newList, res, false);
+        processMailResponseHazel(newList, res, false, "raw");
     });
 });
+
+/**
+ * Get the Last Mail
+ */
+app.get('/mailjson', function (req, res) {
+    logger.info("Incoming get mail json request");
+    getAllMails().then(function (list) {
+        var newList = [];
+        if (list.length > 1) {
+            newList.push(list.pop());
+        }
+        initWebResponse(res);
+        processMailResponseHazel(newList, res, false, "json");
+    });
+});
+
 
 
 /**
@@ -117,12 +133,20 @@ function initWebResponse(res) {
     res.set('Content-Type', 'text/html');
 }
 
-function processMailResponseHazel(list, res, haveMail) {
+function processMailResponseHazel(list, res, haveMail, format) {
     var item = list.shift();
     if (item == null) // Last one
     {
         if (!haveMail) {
-            res.write("There is no mail available");
+            if (format == "raw") {
+                res.write("There is no mail available");
+            } else {
+                var result = {
+                    code: "999"
+                };
+                var buffer = JSON.stringify(result);
+                res.write(buffer);
+            }
         }
         res.end();
         return;
@@ -132,24 +156,37 @@ function processMailResponseHazel(list, res, haveMail) {
         if (source != null) {
             logger.info("Reading email : " + item);
             simpleParser(source, (err, mail) => {
-                var buffer = "";
-                buffer += "Date : " + mail.date + "<br/>";
-                buffer += "From : " + mail.from.text + "<br/>";
-                buffer += "To : " + mail.to.text + "<br/>";
-                buffer += "Subject : " + mail.subject + "<br/";
-                buffer += "Body : " + "<br/>";
-                buffer += mail.textAsHtml;
-                buffer += "<hr/>";
-//                var buffer = item;
+
+                if (format == "raw") {
+                    var buffer = "";
+                    buffer += "Date : " + mail.date + "<br/>";
+                    buffer += "From : " + mail.from.text + "<br/>";
+                    buffer += "To : " + mail.to.text + "<br/>";
+                    buffer += "Subject : " + mail.subject + "<br/";
+                    buffer += "Body : " + "<br/>";
+                    buffer += mail.textAsHtml;
+                    buffer += "<hr/>";
+                } else {
+                    var result = {
+                        code: "000",
+                        date: mail.date,
+                        from: mail.from.text,
+                        to: mail.to.text,
+                        subject: mail.subject,
+                        body: mail.text
+                    };
+
+                    var buffer = JSON.stringify(result);
+                }
+
                 res.write(buffer);
-                processMailResponseHazel(list, res, true);
+                processMailResponseHazel(list, res, true, format);
             })
         } else {
             logger.info("Reading email : " + item + " have expired");
-            processMailResponseHazel(list, res, haveMail);
+            processMailResponseHazel(list, res, haveMail, format);
         }
     });
-
 }
 
 /**
