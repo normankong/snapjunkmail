@@ -13,7 +13,7 @@
     "net": "^1.0.2",
     "raw-body": "^2.3.3",
     "smtp-server": "^3.4.5",
-    "socket.io": "^2.1.1",
+    "socket.io": "^2.5.0",
     "underscore": "^1.9.1",
     "winston": "^3.0.0",
     "winston-daily-rotate-file": "^3.2.1"
